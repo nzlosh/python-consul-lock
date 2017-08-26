@@ -62,7 +62,8 @@ class EphemeralLock(object):
         self.session_id = None
         self._started_locking = False
         assert self.lock_timeout_seconds >= 10 and self.lock_timeout_seconds <= 86400, \
-            'lock_timeout_seconds must be between 10 and 86400 to due to Consul\'s session ttl settings'
+            'lock_timeout_seconds must be between 10 and 86400 to due to Consul\'s \
+            session ttl settings'
 
     def acquire(self, fail_hard=True):
         """
@@ -133,6 +134,35 @@ class EphemeralLock(object):
             acquire=self.session_id
         )
 
+    def maintained(self):
+        """
+        Return True if the state of the consul lock still has a current session
+        and lock on a kv pair, otherwise False.
+        """
+        key_locked = False
+        session_valid = False
+
+        index, lock = self._consul.kv.get(self.full_key)
+        if lock is not None and self.session_id in lock.get("Session", {}):
+            key_locked = True
+
+        index, session = self._consul.session.info(self.session_id)
+        if session is not None and self.session_id in session.get("ID", {}):
+            session_valid = True
+
+        return key_locked and session_valid
+
+    def renew(self):
+        """
+        Renew the lock immediately. Does nothing if never locked.
+        """
+        if self.maintained():
+            # https://www.consul.io/docs/internals/sessions.html
+            return self._consul.session.renew(
+                session_id=self.session_id
+            )
+        return False
+
     def release(self):
         """
         Release the lock immediately. Does nothing if never locked.
@@ -141,8 +171,9 @@ class EphemeralLock(object):
             return False
 
         # destroying the session will is the safest way to release the lock. we'd like to delete the
-        # key, but since it's possible we don't actually have the lock anymore (in distributed systems, there is no spoon)
-        # it's best to just destroy the session and let the lock get cleaned up by Consul
+        # key, but since it's possible we don't actually have the lock anymore (in distributed
+        # systems, there is no spoon) it's best to just destroy the session and let the lock
+        # get cleaned up by Consul.
         #
         # More info:
         # https://www.consul.io/docs/internals/sessions.html
