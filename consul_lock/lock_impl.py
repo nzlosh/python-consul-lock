@@ -43,7 +43,8 @@ class EphemeralLock(object):
                  key,
                  acquire_timeout_ms=None,
                  lock_timeout_seconds=None,
-                 consul_client=None):
+                 consul_client=None,
+                 token=None):
         """
         :param key: the unique key to lock
         :param acquire_timeout_ms: how long the caller is willing to wait to acquire the lock
@@ -53,6 +54,7 @@ class EphemeralLock(object):
         :param consul_client: client to use instead of the one defined in Settings
         """
         self._consul = _coerce_required(consul_client, 'consul_client')
+        self._token = _coerce_required(token, 'token')
 
         self.key = key
         assert key, 'key is required for locking.'
@@ -94,7 +96,8 @@ class EphemeralLock(object):
         self.session_id = self._consul.session.create(
             lock_delay=session_lock_delay,
             ttl=session_ttl,
-            behavior=session_invalidate_behavior
+            behavior=session_invalidate_behavior,
+            token=self._token
         )
 
         self._started_locking = True
@@ -131,7 +134,8 @@ class EphemeralLock(object):
         return self._consul.kv.put(
             key=self.full_key,
             value=value,
-            acquire=self.session_id
+            acquire=self.session_id,
+            token=self._token
         )
 
     def maintained(self):
@@ -142,11 +146,11 @@ class EphemeralLock(object):
         key_locked = False
         session_valid = False
 
-        index, lock = self._consul.kv.get(self.full_key)
+        index, lock = self._consul.kv.get(self.full_key, token=self._token)
         if lock is not None and self.session_id in lock.get("Session", {}):
             key_locked = True
 
-        index, session = self._consul.session.info(self.session_id)
+        index, session = self._consul.session.info(self.session_id, token=self._token)
         if session is not None and self.session_id in session.get("ID", {}):
             session_valid = True
 
@@ -159,7 +163,8 @@ class EphemeralLock(object):
         if self.maintained():
             # https://www.consul.io/docs/internals/sessions.html
             return self._consul.session.renew(
-                session_id=self.session_id
+                session_id=self.session_id,
+                token=self._token
             )
         return False
 
@@ -170,7 +175,7 @@ class EphemeralLock(object):
         if not self._started_locking:
             return False
 
-        # destroying the session will is the safest way to release the lock. we'd like to delete the
+        # destroying the session is the safest way to release the lock. we'd like to delete the
         # key, but since it's possible we don't actually have the lock anymore (in distributed
         # systems, there is no spoon) it's best to just destroy the session and let the lock
         # get cleaned up by Consul.
@@ -178,7 +183,8 @@ class EphemeralLock(object):
         # More info:
         # https://www.consul.io/docs/internals/sessions.html
         return self._consul.session.destroy(
-            session_id=self.session_id
+            session_id=self.session_id,
+            token=self._token
         )
 
     @contextlib.contextmanager

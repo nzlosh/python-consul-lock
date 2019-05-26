@@ -6,6 +6,9 @@ Default settings for locks created. Update this global object to change the defa
 # if you don't want to pass the consul_client into every lock
 consul_client = None
 
+# When using ACLs a token may be required.
+token = None
+
 acquire_timeout_ms = 0
 
 lock_timeout_seconds = 60 * 3
