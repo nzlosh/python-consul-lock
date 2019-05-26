@@ -39,12 +39,14 @@ class EphemeralLock(object):
         https://github.com/hashicorp/consul/issues/968
     """
 
-    def __init__(self,
-                 key,
-                 acquire_timeout_ms=None,
-                 lock_timeout_seconds=None,
-                 consul_client=None,
-                 token=None):
+    def __init__(
+        self,
+        key,
+        acquire_timeout_ms=None,
+        lock_timeout_seconds=None,
+        consul_client=None,
+        token=None
+    ):
         """
         :param key: the unique key to lock
         :param acquire_timeout_ms: how long the caller is willing to wait to acquire the lock
